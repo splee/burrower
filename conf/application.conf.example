@@ -15,7 +15,7 @@ burrower {
     influx {
         host = 127.0.0.1
         port = 8086
-        db = storm
+        db = influx
         user = username
         passwd = password
         prefix = some.prefix.for.all.stats
