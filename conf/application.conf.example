@@ -1,0 +1,23 @@
+burrower {
+    groupId = your-consumer-group-id
+    cluster = your-cluster-name
+    topics = [
+        first-topic
+        second-topic
+        nth-topic
+    ]
+
+    burrow {
+        host = 127.0.0.1
+        port = 8000
+    }
+
+    influx {
+        host = 127.0.0.1
+        port = 8086
+        db = storm
+        user = username
+        passwd = password
+        prefix = some.prefix.for.all.stats
+    }
+}
