@@ -1,5 +1,8 @@
 # Burrower
 
+A simple tool to calculate the lag of a given consumer group from [Burrow](http://github.com/linkedin/burrow)
+and report it to InfluxDB.
+
 Works with:
 * InfluxDB 0.9
 * Burrow latest (Commit SHA: [aff0e33](https://github.com/linkedin/Burrow/commit/aff0e3321fefcacd2bde9685e6bed813c96bcc7c))
