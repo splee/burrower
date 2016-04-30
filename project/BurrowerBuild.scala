@@ -15,10 +15,11 @@ object BurrowerBuild extends Build {
     .settings(
       libraryDependencies ++= Seq(
         Libraries.playJson,
-        Libraries.metrics,
         Libraries.scalaLogging,
-        Libraries.dispatch
+        Libraries.logbackClassic,
+        Libraries.scalaJ,
+        Libraries.influxDb
       )
     )
-    .settings(scalaVersion := "2.11.6")
+    .settings(scalaVersion := "2.11.7")
 }

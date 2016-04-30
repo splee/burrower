@@ -3,3 +3,4 @@ lib/
 project/project
 project/target
 target/
+**/application.conf
