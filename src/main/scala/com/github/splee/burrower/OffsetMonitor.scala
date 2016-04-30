@@ -1,149 +1,151 @@
 package com.github.splee.burrower
 
-import java.io.{StringWriter, PrintWriter}
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-
-import com.codahale.metrics.{MetricFilter, Gauge, MetricRegistry}
-import com.typesafe.config.{ConfigFactory, Config}
+import com.github.splee.burrower.lag.{BurrowConsumerStatus, BurrowPartitionLag, Lag, LagGroup}
+import com.github.splee.burrower.write.{ConsoleWriter, InfluxWriter, Writer}
+import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.LazyLogging
-import metrics_influxdb.{InfluxdbHttp, InfluxdbReporter}
+import scalaj.http._
 import play.api.libs.json._
-import dispatch._, Defaults._
-import scala.collection.JavaConverters._
-
-case class MonitorState(
-  currentLag: Long,
-  topicOffsets: List[Long],
-  consumerOffsets: List[Long])
 
 object OffsetMonitor extends LazyLogging {
-  def createReporter(metrics: MetricRegistry, conf: Config): InfluxdbReporter = {
-    val client = new InfluxdbHttp(
-      conf.getString("burrower.influx.host"),
-      conf.getInt("burrower.influx.port"),
-      conf.getString("burrower.influx.db"),
-      conf.getString("burrower.influx.user"),
-      conf.getString("burrower.influx.passwd"))
-
-    InfluxdbReporter.forRegistry(metrics)
-      .prefixedWith(conf.getString("burrower.influx.prefix"))
-      .convertRatesTo(TimeUnit.SECONDS)
-      .convertDurationsTo(TimeUnit.MILLISECONDS)
-      .filter(MetricFilter.ALL)
-      .skipIdleMetrics(false)
-      .build(client)
-  }
 
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load()
 
     val bHost = conf.getString("burrower.burrow.host")
     val bPort = conf.getInt("burrower.burrow.port")
-    val bCluster = conf.getString("burrower.cluster")
-    val groupId = conf.getString("burrower.groupId")
-    val topics = conf.getStringList("burrower.topics").asScala
 
-    val metrics = new MetricRegistry()
-    val reporter = createReporter(metrics, conf)
-    reporter.start(10, TimeUnit.SECONDS)
+    val writer = buildWriter(conf)
 
-    val running = new AtomicBoolean(true)
+    logger.info("Creating monitor...")
 
-    logger.info("Creating monitors for %s topics:".format(topics.size))
-    for (t <- topics) logger.info(f"Cluster: $bCluster%s, Group: $groupId%s, Topic: $t%s")
-
-    def _createRunnable(t: String) =
-      (t, new OffsetMonitor(running, bHost, bPort, metrics, bCluster, t, groupId))
-
-    val monitorThreads = topics.map(_createRunnable)
-      .map(r => (r._1, new Thread(r._2)))
-      .toMap
+    val monitorThread = new Thread(new OffsetMonitor(bHost, bPort, writer))
 
     logger.info("Starting.")
-    monitorThreads.values.foreach(_.start())
+    monitorThread.start()
+    monitorThread.join()
 
-    while (monitorThreads.values.map(_.isAlive).reduce(_ && _)) {
-      Thread.sleep(1000)
-    }
-
-    logger.warn("A thread died, shut it down!")
-    // If we got here a thread died. Stop everything.
-    running.set(false)
-
-    // Wait for the rest of the threads to finish.
-    logger.info("waiting for threads to terminate...")
-    monitorThreads.values.foreach(_.join())
     logger.info("Done.")
     sys.exit()
   }
+
+  def buildWriter(conf: Config): Writer = {
+    val writerType = conf.getString("burrower.writer")
+    logger.info(f"Creating $writerType writer...")
+
+    if (writerType == "console")
+      buildConsoleWriter(conf)
+    else if (writerType == "influxdb")
+      buildInfluxWriter(conf)
+    else
+      throw new RuntimeException(f"Writer of type '$writerType' is unknown")
+  }
+
+  def buildConsoleWriter(conf: Config): ConsoleWriter =
+    new ConsoleWriter()
+
+  def buildInfluxWriter(conf: Config): InfluxWriter =
+    new InfluxWriter(
+      conf.getString("burrower.influx.host"),
+      conf.getInt("burrower.influx.port"),
+      conf.getString("burrower.influx.database"),
+      conf.getString("burrower.influx.series")
+    )
 }
 
 class OffsetMonitor (
-  running: AtomicBoolean,
   burrowHost: String,
   burrowPort: Number,
-  metrics: MetricRegistry,
-  cluster: String,
-  topic: String,
-  groupId: String) extends Runnable with LazyLogging {
+  writer: Writer
+) extends Runnable with LazyLogging {
 
-  private var state = MonitorState(0, List(), List())
-  def currentLag = state.synchronized { state.currentLag }
-  def topicOffsets = state.synchronized { state.topicOffsets }
-  def consumerOffsets = state.synchronized { state.consumerOffsets }
-
-  private val gauge = new Gauge[Long]() {
-    override def getValue = currentLag
-  }
+  val burrowBaseUrl = f"http://$burrowHost:$burrowPort/v2/kafka"
 
   def run(): Unit = {
-    metrics.register(MetricRegistry.name(
-      "OffsetMonitor",
-      groupId,
-      topic,
-      "lag"), gauge)
-
-    while (running.get) {
-      updateCurrentLag()
+    while (true) {
+      val lag = getLag
+      if (lag.isDefined) {
+        writer.write(LagGroup(System.currentTimeMillis(), lag.get))
+      } else {
+        logger.info("No lag values to write.")
+      }
       Thread.sleep(1000 * 5)
     }
   }
 
-  def burrowBase = host(burrowHost + ":" + burrowPort.toString) / "v2" / "kafka" / cluster
+  def buildUrl(endpoint: String) = f"$burrowBaseUrl/$endpoint"
 
-  def topicOffsetRequest() = Http(burrowBase / "consumer" / groupId / "topic" / topic OK as.String)
+  def getClusters: Option[List[String]] = {
+    val resp = Http(burrowBaseUrl).asString
+    val respJson = Json.parse(resp.body)
+    if ((respJson \ "error").as[Boolean]) {
+      val errorMsg = (respJson \ "message").as[String]
+      logger.error(f"Error retrieving clusters: '$errorMsg'")
+      return None
+    }
 
-  def consumerOffsetRequest() = Http(burrowBase / "topic" / topic OK as.String)
-
-  def calculateTotalLag(topicOffsets: List[Long], consumerOffsets: List[Long]): Long = {
-    val lag = (consumerOffsets zip topicOffsets).map(p => p._1 - p._2).sum
-    // We don't ever want our lag to be negative. Let's assume we didn't ingest future messages.
-    if (lag < 0) 0 else lag
+    Option((respJson \ "clusters").as[List[String]])
   }
 
-  def updateCurrentLag() {
-    // Launch the requests asynchronously
-    val consumerResp = consumerOffsetRequest()
-    val topicResp = topicOffsetRequest()
-
-    // Get the responses and parse out the offsets.
-    try {
-      val newConsumerOffsets = (Json.parse(consumerResp()) \ "offsets").as[List[Long]]
-      val newTopicOffsets = (Json.parse(topicResp()) \ "offsets").as[List[Long]]
-      val newLag = calculateTotalLag(newTopicOffsets, newConsumerOffsets)
-
-      val newState = MonitorState(newLag, newTopicOffsets, newConsumerOffsets)
-
-      // Lock these as we update them as we'll be used in a threaded environment.
-      state.synchronized {
-        state = newState
-      }
-    } catch {
-      case e: Exception =>
-        val sw = new StringWriter()
-        e.printStackTrace(new PrintWriter(sw))
-        logger.error(sw.toString)
+  def getConsumers(cluster: String): Option[List[String]] = {
+    val resp = Http(buildUrl(f"$cluster/consumer")).asString
+    val respJson = Json.parse(resp.body)
+    if ((respJson \ "error").as[Boolean]) {
+      val errorMsg = (respJson \ "message").as[String]
+      logger.error(f"Error retrieving consumers: '$errorMsg'")
+      return None
     }
+
+    Option((respJson \ "consumers").as[List[String]])
+  }
+
+  def getLag(cluster: String, consumer: String): Option[List[Lag]] = {
+    val resp = Http(buildUrl(f"$cluster/consumer/$consumer/lag")).asString
+    val respJson = Json.parse(resp.body)
+    if ((respJson \ "error").as[Boolean]) {
+      val errorMsg = (respJson \ "message").as[String]
+      logger.error(f"Error retrieving lag: '$errorMsg")
+      return None
+    }
+    val statusResponse = (respJson \ "status").as[BurrowConsumerStatus]
+    Option(statusResponse.partitions.map((item: BurrowPartitionLag) => {
+      Lag(
+        cluster,
+        consumer,
+        item.topic,
+        item.partition,
+        item.end.offset,
+        item.end.timestamp,
+        item.end.lag
+      )
+    }))
+  }
+
+  def getLag(cluster: String): Option[List[Lag]] = {
+    val consumers = getConsumers(cluster)
+    if (consumers.isEmpty || consumers.get.isEmpty) {
+      logger.error("No consumers. Skipping lag check.")
+      return None
+    }
+
+    Option(consumers.get
+      .map(getLag(cluster, _))
+      .filter(_.isDefined)
+      .map(_.get)
+      .flatMap(_.toList))
+  }
+
+  def getLag: Option[List[Lag]] = {
+    val clusters = getClusters
+    if (clusters.isEmpty || clusters.get.isEmpty) {
+      logger.error("No clusters. Skipping lag check.")
+      return None
+    }
+
+    Option(clusters.get
+      .map(getLag(_))
+      .filter(_.isDefined)
+      .map(_.get)
+      .flatMap(_.toList))
   }
 }
