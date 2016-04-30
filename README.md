@@ -25,7 +25,7 @@ Metrics are sent to InfluxDB with the following values and tags:
 ## Usage
 
 1. `git clone https://github.com/splee/burrower.git`
-1. `cd burrow && sbt assembly`
+1. `cd burrower && sbt assembly`
 1. Update configuration, saving it as `conf/application.conf` (example config file: `burrow/conf/application.conf.example`)
 1. `java -cp target/scala-2.11/burrower-0.2-SNAPSHOT.jar:conf/ com.github.splee.burrower.OffsetMonitor`
 
