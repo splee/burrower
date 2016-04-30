@@ -28,10 +28,10 @@ Metrics are sent to InfluxDB with the following values and tags:
 1. `git clone https://github.com/splee/burrower.git`
 1. `cd burrower && sbt assembly`
 1. Update configuration, saving it as `conf/application.conf` (example config file: `burrow/conf/application.conf.example`)
-1. `java -cp target/scala-2.11/burrower-0.2-SNAPSHOT.jar:conf/ com.github.splee.burrower.OffsetMonitor`
+1. `java -cp target/scala-2.11/burrower-0.2-SNAPSHOT.jar:conf/ com.github.splee.burrower.Main`
 
 ## Planned Features
 
-* Ability to specify any class implmenting `com.github.splee.burrower.write.Writer` to write metrics to custom back ends.
 * Tests!
+* Filtering for clusters, topcis, and consumer groups (e.g. ignore all topcis prefixed with dev-*)
 * Packaging for Debian with sane defaults and an Upstart configuration.

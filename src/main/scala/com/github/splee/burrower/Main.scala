@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.LazyLogging
 import scalaj.http._
 import play.api.libs.json._
 
-object OffsetMonitor extends LazyLogging {
+object Main extends LazyLogging {
 
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load()
@@ -19,7 +19,7 @@ object OffsetMonitor extends LazyLogging {
 
     logger.info("Creating monitor...")
 
-    val monitorThread = new Thread(new OffsetMonitor(bHost, bPort, writer))
+    val monitorThread = new Thread(new Main(bHost, bPort, writer))
 
     logger.info("Starting.")
     monitorThread.start()
@@ -53,7 +53,7 @@ object OffsetMonitor extends LazyLogging {
     )
 }
 
-class OffsetMonitor (
+class Main (
   burrowHost: String,
   burrowPort: Number,
   writer: Writer
