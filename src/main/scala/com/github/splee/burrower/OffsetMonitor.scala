@@ -49,7 +49,9 @@ object OffsetMonitor extends LazyLogging {
       conf.getString("burrower.influx.host"),
       conf.getInt("burrower.influx.port"),
       conf.getString("burrower.influx.database"),
-      conf.getString("burrower.influx.series")
+      conf.getString("burrower.influx.series"),
+      conf.getString("burrower.influx.userName"),
+      conf.getString("burrower.influx.password")
     )
 }
 
