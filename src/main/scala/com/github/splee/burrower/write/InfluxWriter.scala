@@ -36,7 +36,7 @@ class InfluxWriter(
         case Success(v) =>
           logger.debug("Metrics sent to InfluxDB")
         case Failure(e) =>
-          logger.debug(f"Sending metrics to InfluxDB failed: ${e.getMessage}\n" + e.getStackTrace.mkString("", EOL, EOL))
+          logger.debug(f"Sending metrics to InfluxDB failed: ${e.getMessage}")
       })
   }
 }
