@@ -13,5 +13,7 @@ burrower {
     port = 8086
     database = "metrics"
     series = "kafka.consumer_lag"
+    userName = "root"
+    password = "root"
   }
 }
