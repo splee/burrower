@@ -51,7 +51,8 @@ object OffsetMonitor extends LazyLogging {
       conf.getString("burrower.influx.database"),
       conf.getString("burrower.influx.series"),
       conf.getString("burrower.influx.userName"),
-      conf.getString("burrower.influx.password")
+      conf.getString("burrower.influx.password"),
+      conf.getBoolean("burrower.influx.isSecure")
     )
 }
 
