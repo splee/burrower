@@ -11,6 +11,7 @@ burrower {
   influx {
     host = 127.0.0.1
     port = 8086
+    isSecure = false
     database = "metrics"
     series = "kafka.consumer_lag"
   }

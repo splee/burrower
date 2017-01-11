@@ -15,10 +15,11 @@ class InfluxWriter(
   influxDatabase: String,
   influxSeries: String,
   userName: String,
-  password: String
+  password: String,
+  isSecure: Boolean
 ) extends Writer with LazyLogging {
 
-  val influxdb = InfluxDB.connect(influxHost, influxPort, userName, password)
+  val influxdb = InfluxDB.connect(influxHost, influxPort, userName, password, isSecure)
   val database = influxdb.selectDatabase(influxDatabase)
 
   def write(lagGroup: LagGroup): Unit = {
